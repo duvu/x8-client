@@ -54,6 +54,10 @@ Once you've verified everything works:
 python -m twine upload dist/*
 ```
 
+```bash
+python -m build && twine upload dist/*
+```
+
 Enter your PyPI username and password when prompted.
 
 ### 5. Verify Installation

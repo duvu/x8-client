@@ -141,8 +141,7 @@ class APIClient:
             logger.info(f"[x8] Video processing response: {response.json()}")
             
             # Create and return an Article object from the response
-            response_data = response.json()
-            return Article(**response_data)
+            return response.json()
             
         except RequestException as e:
             error_msg = f"Error making video for article: {video.unique_id}"
