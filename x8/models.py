@@ -66,3 +66,18 @@ class Video:
     def to_dict(self) -> Dict[str, Any]:
         """Convert the video instance to a dictionary."""
         return asdict(self)
+
+
+@dataclass
+class FacebookPost:
+    unique_id: str
+    profile: str
+    title: Optional[str] = None
+    summary: Optional[str] = None
+    link: Optional[str] = None
+    is_master: bool = False
+    fb_url: Optional[str] = None
+    bg_idx: Optional[int] = None
+
+    def to_dict(self):
+        return asdict(self)

@@ -1,6 +1,6 @@
-"""X8 API client package."""
+"""x8 client package."""
 
 from .api_client import APIClient
 from .models import Article, Video
 
-__version__ = "0.1.2"
+__version__ = "0.1.3"
