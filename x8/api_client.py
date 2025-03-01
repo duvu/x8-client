@@ -8,7 +8,7 @@ from requests.exceptions import RequestException
 
 from .config import API_BASE_URL, SECRET_KEY, DEFAULT_TIMEOUT, DEFAULT_PAGE_SIZE
 from .exceptions import APIError, VideoProcessingError
-from .models import Article, Video
+from .models import Article, FacebookPost, Video
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +51,8 @@ class APIClient:
         video_made: Optional[bool] = None,
         has_img: Optional[bool] = None,
         has_video: Optional[bool] = None,
-        age: int = 0
+        age: int = 0,
+        fb_posted: Optional[bool] = None
     ) -> List[Article]:
         """Fetch articles from the API based on given filters.
 
@@ -65,6 +66,7 @@ class APIClient:
             has_img: Filter by image presence
             has_video: Filter by video presence
             age: Filter by age in days
+            fb_posted: Filter by Facebook posted status
 
         Returns:
             List of Article objects
@@ -112,12 +114,39 @@ class APIClient:
             age=age
         )
 
-    def make_video(self, video: Video, included_long_video: bool = False) -> Article:
+    def get_articles_not_fb_posted(
+        self,
+        category: Optional[str] = None,
+        tags: Optional[str] = None,
+        age: int = 1,
+        fb_posted: bool = False
+    ) -> List[Article]:
+        """Get articles that haven't been posted to Facebook yet.
+
+        Args:
+            category: Optional category filter
+            tags: Optional tags filter
+            age: Maximum age of articles in days
+            fb_posted: Whether the article has been posted to Facebook
+
+        Returns:
+            List of Article objects
+        """
+        return self._read_articles(
+            fb_posted=fb_posted,
+            category=category,
+            tags=tags,
+            age=age
+        )
+
+    def make_video(self, video: Video, included_long_video: bool = False, fmt=None, **kwargs) -> Any:
         """Process an article into a video.
 
         Args:
             video: Video object containing processing details
             included_long_video: Whether to include long video version
+            fmt: Format of the video output
+            **kwargs: Additional parameters to pass to the API
 
         Returns:
             Processed Article object
@@ -126,7 +155,15 @@ class APIClient:
             VideoProcessingError: If video processing fails
         """
         url = f"{self.base_url}/video/ve8"
-        params = {'included_long_video': included_long_video} if included_long_video else {}
+        
+        # Build parameters dictionary with all options
+        params = {}
+        if included_long_video:
+            params['included_long_video'] = included_long_video
+        if fmt:
+            params['fmt'] = fmt
+        # Add any additional keyword arguments to the parameters
+        params.update(kwargs)
 
         try:
             response = requests.post(
@@ -147,3 +184,15 @@ class APIClient:
             error_msg = f"Error making video for article: {video.unique_id}"
             logger.error(f"[x8] {error_msg} - {str(e)}")
             raise VideoProcessingError(f"{error_msg}: {str(e)}") from e
+
+    def post_facebook(self, fb_post: FacebookPost) -> Article:
+        url = f"{self.base_url}/facebook/vf8"  # virtual facebooker 8
+        headers = self._get_headers()
+        try:
+            response = requests.post(url, headers=headers, json=fb_post.to_dict())
+            logger.info(f"[x8] Response: {response}")
+            response.raise_for_status()
+            return response.json()
+        except Exception as err:
+            logger.error(f"[x8] Error making video for article: {fb_post.unique_id} - {err}")
+            raise err
