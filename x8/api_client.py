@@ -1,19 +1,29 @@
 """API client for interacting with the video processing service."""
 
 import logging
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Union, TypeVar, cast
 
 import requests
 from requests.exceptions import RequestException
 
 from .config import API_BASE_URL, SECRET_KEY, DEFAULT_TIMEOUT, DEFAULT_PAGE_SIZE
-from .exceptions import APIError, VideoProcessingError
+from .exceptions import APIError, VideoProcessingError, FacebookPostingError
 from .models import Article, FacebookPost, Video
 
 logger = logging.getLogger(__name__)
 
+T = TypeVar('T')
+
 class APIClient:
-    """Client for interacting with the video processing API."""
+    """Client for interacting with the video processing API.
+    
+    This client provides methods for fetching articles, creating videos, and posting content
+    to Facebook through the backend API.
+    
+    Attributes:
+        base_url: Base URL for the API endpoints
+        secret_key: Authentication secret key for API requests
+    """
 
     def __init__(self, base_url: str = API_BASE_URL, secret_key: str = SECRET_KEY) -> None:
         """Initialize the API client.
@@ -21,6 +31,9 @@ class APIClient:
         Args:
             base_url: Base URL for the API
             secret_key: Authentication secret key
+            
+        Raises:
+            ValueError: If base_url or secret_key is not provided
         """
         if not base_url:
             raise ValueError("API_BASE_URL is not configured")
@@ -40,6 +53,47 @@ class APIClient:
             "Authorization": f"Bearer {self.secret_key}",
             "Content-Type": "application/json"
         }
+    
+    def _make_request(
+        self, 
+        method: str, 
+        endpoint: str, 
+        params: Optional[Dict[str, Any]] = None, 
+        data: Optional[Dict[str, Any]] = None,
+        error_msg: str = "API request failed"
+    ) -> Dict[str, Any]:
+        """Make a request to the API.
+        
+        Args:
+            method: HTTP method to use (GET, POST, etc.)
+            endpoint: API endpoint to call (without base URL)
+            params: URL parameters to include
+            data: JSON data to send in the request body
+            error_msg: Error message to use if the request fails
+            
+        Returns:
+            Parsed JSON response
+            
+        Raises:
+            APIError: If the API request fails
+        """
+        url = f"{self.base_url}/{endpoint}"
+        
+        try:
+            response = requests.request(
+                method=method,
+                url=url,
+                headers=self._get_headers(),
+                params=params,
+                json=data,
+                timeout=DEFAULT_TIMEOUT
+            )
+            logger.debug(f"[x8] {method} {url} - Status: {response.status_code}")
+            response.raise_for_status()
+            return response.json()
+        except RequestException as e:
+            logger.error(f"[x8] {error_msg}: {str(e)}")
+            raise APIError(f"{error_msg}: {str(e)}") from e
 
     def _read_articles(
         self,
@@ -74,21 +128,18 @@ class APIClient:
         Raises:
             APIError: If the API request fails
         """
+        # Remove self from locals and filter out None values
         params = {k: v for k, v in locals().items() 
-                 if k not in ['self'] and v is not None}
+                 if k != 'self' and v is not None}
         
-        try:
-            response = requests.get(
-                f"{self.base_url}/articles",
-                headers=self._get_headers(),
-                params=params,
-                timeout=DEFAULT_TIMEOUT
-            )
-            response.raise_for_status()
-            return [Article(**article) for article in response.json()['data']]
-        except RequestException as e:
-            logger.error(f"Failed to fetch articles: {str(e)}")
-            raise APIError(f"Failed to fetch articles: {str(e)}") from e
+        response_data = self._make_request(
+            method="GET",
+            endpoint="articles",
+            params=params,
+            error_msg="Failed to fetch articles"
+        )
+        
+        return [Article.from_dict(article) for article in response_data.get('data', [])]
 
     def get_articles_not_made_video(
         self,
@@ -138,8 +189,39 @@ class APIClient:
             tags=tags,
             age=age
         )
+        
+    def get_article_by_id(self, article_id: str) -> Optional[Article]:
+        """Get a specific article by its ID.
+        
+        Args:
+            article_id: Unique identifier of the article
+            
+        Returns:
+            Article object if found, None otherwise
+            
+        Raises:
+            APIError: If the API request fails
+        """
+        try:
+            response_data = self._make_request(
+                method="GET",
+                endpoint=f"articles/{article_id}",
+                error_msg=f"Failed to fetch article {article_id}"
+            )
+            return Article.from_dict(response_data)
+        except APIError as e:
+            if "404" in str(e):
+                logger.warning(f"Article {article_id} not found")
+                return None
+            raise
 
-    def make_video(self, video: Video, included_long_video: bool = False, fmt=None, **kwargs) -> Any:
+    def make_video(
+        self, 
+        video: Video, 
+        included_long_video: bool = False, 
+        fmt: Optional[str] = None, 
+        **kwargs
+    ) -> Dict[str, Any]:
         """Process an article into a video.
 
         Args:
@@ -149,13 +231,11 @@ class APIClient:
             **kwargs: Additional parameters to pass to the API
 
         Returns:
-            Processed Article object
+            Processed video data as dictionary
 
         Raises:
             VideoProcessingError: If video processing fails
         """
-        url = f"{self.base_url}/video/ve8"
-        
         # Build parameters dictionary with all options
         params = {}
         if included_long_video:
@@ -166,33 +246,57 @@ class APIClient:
         params.update(kwargs)
 
         try:
-            response = requests.post(
-                url,
-                headers=self._get_headers(),
-                json=video.to_dict(),
+            return self._make_request(
+                method="POST",
+                endpoint="video/ve8",
                 params=params,
-                timeout=DEFAULT_TIMEOUT
+                data=video.to_dict(),
+                error_msg=f"Error making video for article: {video.unique_id}"
             )
-            logger.info(f"[x8] Video processing response status: {response.status_code}")
-            response.raise_for_status()
-            logger.info(f"[x8] Video processing response: {response.json()}")
-            
-            # Create and return an Article object from the response
-            return response.json()
-            
-        except RequestException as e:
-            error_msg = f"Error making video for article: {video.unique_id}"
-            logger.error(f"[x8] {error_msg} - {str(e)}")
-            raise VideoProcessingError(f"{error_msg}: {str(e)}") from e
+        except APIError as e:
+            # Convert APIError to more specific VideoProcessingError
+            raise VideoProcessingError(str(e)) from e
 
-    def post_facebook(self, fb_post: FacebookPost) -> Article:
-        url = f"{self.base_url}/facebook/vf8"  # virtual facebooker 8
-        headers = self._get_headers()
+    def post_facebook(self, fb_post: FacebookPost) -> Dict[str, Any]:
+        """Post content to Facebook.
+        
+        Args:
+            fb_post: FacebookPost object containing post details
+            
+        Returns:
+            Response data as dictionary
+            
+        Raises:
+            FacebookPostingError: If posting to Facebook fails
+        """
         try:
-            response = requests.post(url, headers=headers, json=fb_post.to_dict())
-            logger.info(f"[x8] Response: {response}")
-            response.raise_for_status()
-            return response.json()
-        except Exception as err:
-            logger.error(f"[x8] Error making video for article: {fb_post.unique_id} - {err}")
-            raise err
+            return self._make_request(
+                method="POST",
+                endpoint="facebook/vf8",
+                data=fb_post.to_dict(),
+                error_msg=f"Error posting to Facebook for: {fb_post.unique_id}"
+            )
+        except APIError as e:
+            # Convert APIError to more specific FacebookPostingError
+            raise FacebookPostingError(str(e)) from e
+            
+    def update_article(self, article: Article) -> Article:
+        """Update an existing article.
+        
+        Args:
+            article: Article object with updated fields
+            
+        Returns:
+            Updated Article object
+            
+        Raises:
+            APIError: If the API request fails
+        """
+        response_data = self._make_request(
+            method="PUT",
+            endpoint=f"articles/{article.unique_id}",
+            data=article.to_dict(),
+            error_msg=f"Error updating article: {article.unique_id}"
+        )
+        
+        return Article.from_dict(response_data)

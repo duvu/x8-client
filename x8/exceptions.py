@@ -7,3 +7,7 @@ class APIError(Exception):
 class VideoProcessingError(APIError):
     """Raised when video processing fails."""
     pass
+
+class FacebookPostingError(APIError):
+    """Raised when posting to Facebook fails."""
+    pass
