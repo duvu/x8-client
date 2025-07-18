@@ -1,3 +1,47 @@
 [build-system]
-requires = ["setuptools>=42", "wheel"]
+requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[project]
+name = "x8-client"
+dynamic = ["version"]
+description = "Client library for the x8 video processing API"
+readme = "README.md"
+authors = [
+    {name = "vubakninh", email = "vubakninh@gmail.com"},
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Intended Audience :: Developers",
+    "Topic :: Multimedia :: Video",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+requires-python = ">=3.8"
+dependencies = [
+    "requests",
+    "python-dotenv",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "requests-mock",
+    "pytest-mock",
+    "pytest-cov",
+    "twine",
+    "build",
+]
+
+[project.urls]
+Homepage = "https://github.com/duvu/x8-client"
+"Bug Tracker" = "https://github.com/duvu/x8-client/issues"
+
+[tool.setuptools.dynamic]
+version = {attr = "x8.__version__"}

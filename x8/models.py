@@ -62,6 +62,7 @@ class Article(BaseModel):
         message: Additional message/notes about the article
         has_img: Whether the article has an image
         has_video: Whether the article has a video
+        created_at: Timestamp when the article was created
     """
     
     unique_id: str
@@ -86,6 +87,7 @@ class Article(BaseModel):
     message: Optional[str] = None
     has_img: Optional[bool] = None
     has_video: Optional[bool] = None
+    created_at: Optional[datetime] = None
     
     def __post_init__(self):
         """Perform post-initialization processing."""
